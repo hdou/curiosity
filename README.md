@@ -9,18 +9,20 @@ are assembled on the board. One L298N controls two front wheels, and
 the other rear wheel. RPi's GPIO pins controls the wheels through the 
 motor controllers as follows:
 
-wheels                       RPi's GPIO (pin number)  
----------------------------------------------------------------------
-left front wheel             GPIO 4 (7), and GPIO 17 (11)
-right front wheel            GPIO 18 (12), and GPIO 27 (13)
-left rear wheel              GPIO 22 (15), and GPIO 23 (16)
-right rear wheel             GPIO 24 (18), and GPIO 25 (22)
+<table>
+<tr><th>wheels</th><th>RPi's GPIO (pin number)</th></tr>
+<tr><td>left front wheel</td><td>GPIO 4 (7), and GPIO 17 (11)</td></tr>
+<tr><td>right front wheel</td><td>GPIO 18 (12), and GPIO 27 (13)</td></tr>
+<tr><td>left rear wheel</td><td>GPIO 22 (15), and GPIO 23 (16)</td></tr>
+<tr><td>right rear wheel</td><td>GPIO 24 (18), and GPIO 25 (22)</td></tr>
+</table>
 
 Each wheel is controlled by two GPIO pins as follows:
 
-Movement       GPIO #1          GPIO #2
----------------------------------------------------------------------
-stop           False            False
-forward        True             False
-backward       False            True
-               
+<table>
+<tr><th>Movement</th><th>GPIO #1</th><th>GPIO #2</th></tr>
+<tr><td>stop</td><td>False</td><td>False</td></tr>
+<tr><td>forward</td><td>True</td><td>False</td></tr>
+<tr><td>backward</td><td>False</td><td>True</td></tr>
+</table>
+
