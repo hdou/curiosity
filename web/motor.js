@@ -27,7 +27,13 @@ var app = require('http').createServer(handler)
   , fs = require('fs')
   , url = require('url')
   , exec = require('child_process').exec
+  , zmq = require('zmq')
 
+// Start the zeromq client to communicate with the motor control server
+zmqsocket = zmq.socket('pair')
+zmqsocket.connect('tcp://localhost:5555') 
+
+// Node server, listening to port 8088
 app.listen(8088);
 
 function handler (req, res) {
@@ -49,17 +55,16 @@ function handler (req, res) {
   });
 }
 
+zmqsocket.on('message', function(resp) {
+  console.log('Motor server response: ' + resp);
+});
+
 io.sockets.on('connection', function (socket) {
   socket.on('control event', function (data) {
     console.log(data);
     var op = data['op'];
-    exec('sudo python ../scripts/motor.py ' + op, function(error, stdout, stderr) {
-     console.log('stdout' + stdout);
-     console.log('stderr' + stderr);
-     if (error != null) {
-       console.log(error);
-     }
-    });
+    zmqsocket.send(op);
   });
 });
+
 

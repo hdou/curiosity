@@ -25,6 +25,8 @@ THE SOFTWARE.
 import RPi.GPIO as gpio
 import time 
 import sys
+import zmq
+import signal
 
 # Define control pins using BOARD numbering
 left_front_wheel_forward_pin = 7
@@ -133,37 +135,73 @@ def test():
 	time.sleep(2)
 	car_stop()
 
-def show_usage():
-	print "usage: sudo motor.py <f | b | lf | rf | t>"
-	print "    f: forward"
-	print "    b: backward"
-	print "    lf: left forward"
-	print "    rf: right forward"
-	print "    t: stop"
+#######################################################
+# Car control commands:
+#  f: forward
+#  b: backward
+#  lf: left forward
+#  rf: right forward
+#  t: stop the car
+#######################################################
+commands = {
+	'f' : car_forward,
+	'b' : car_backward,
+	'lf': car_left_forward,
+	'rf': car_right_forward,
+	't' : car_stop
+}
 
-def car_control():
-	if len(sys.argv) == 2:
-		cmd = sys.argv[1]
-		if cmd == 'f':
-			car_forward()
-		elif cmd == 'b':
-			car_backward()
-		elif cmd == 'lf':
-			car_left_forward()
-		elif cmd == 'rf':
-			car_right_forward()
-		elif cmd == 't':
-			car_stop()
+
+#######################################################
+# To connect to the server, run a program that implements
+# a zeromq client, and send commands to the server as
+# specified above.
+#######################################################
+def run_control_server():
+	'''
+	Run a zeromq server to receive commands from the clients
+	Use TCP port: 5555
+	Valid commands are:
+	 car control commands
+	 q: quit the server
+	'''
+	context = zmq.Context()
+	socket = context.socket(zmq.PAIR) # Use PAIR sockets
+	print 'Listening to port 5555'
+	socket.bind('tcp://*:5555')
+
+	def sigint_handler(sig, frame):
+		'''
+		Intercept the SIGINT signal, close the socket, and exit
+		gracefully.
+		'''
+		print '\nReceived Ctrl-C'
+		print 'Closing the socket ...',
+		socket.close()
+		print 'done'
+		sys.exit(0)
+	
+	# Set our own sigint handler
+	signal.signal(signal.SIGINT, sigint_handler)
+
+	while True:
+		cmd = socket.recv()
+		print 'Control server: received command ', cmd
+		if cmd in commands:
+			commands[cmd]()
+			socket.send('OK ' + cmd)
+		elif cmd == 'q':
+			car_stop()	# stop the car before close
+			socket.send('OK. Quit')
+			socket.close()
+			context.term()
+			break
 		else:
-			show_usage()
-			raise Exception("Invalid command")
-	else:
-		show_usage()
-		raise Exception("Invalid arguments")
+			socket.send('Err: Unknown command ' + cmd)
+			print 'Invalid command: ', cmd
 
 if __name__ == '__main__':
 	setup()
 	#test()	
-	car_control()
-
+	run_control_server()
 
