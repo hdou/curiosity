@@ -27,8 +27,9 @@ import time
 import sys
 import zmq
 import signal
+import threading
 
-# Define control pins using BOARD numbering
+# Motor control pins using BOARD numbering
 left_front_wheel_forward_pin = 7
 left_front_wheel_backward_pin = 11
 right_front_wheel_forward_pin = 12
@@ -45,14 +46,35 @@ control_pins = [left_front_wheel_forward_pin, left_front_wheel_backward_pin, \
                 right_rear_wheel_forward_pin, right_rear_wheel_backward_pin]
 
 
+# IR range sensor (rs) pins
+rs_trigger = 3
+rs_input = 5
+
+# Symbols used for the status of the car
+Stopped = 1
+Forward = 2
+Backward = 3
+LeftForward = 5
+RightForward = 6
+
+# Global variable to store the current car status
+car_status = Stopped
+
 def setup():
 	'''
 	Setup the GPIO pins
 	'''
 	gpio.setmode(gpio.BOARD)
 	gpio.setwarnings(False)	# Suppress the warnings complaining that the channel has been configured ...
+	# motor control pins
 	[gpio.setup(p, gpio.OUT) for p in control_pins]
 	
+	# range sensor pins
+	gpio.setup(rs_trigger, gpio.OUT)
+	gpio.setup(rs_input, gpio.IN)
+	# set the trigger to low as the initial condition
+	gpio.output(rs_trigger, gpio.LOW)	
+
 
 def left_front_wheel_forward():
 	gpio.output(left_front_wheel_forward_pin, True)
@@ -91,15 +113,21 @@ def car_forward():
 	right_front_wheel_forward()
 	left_rear_wheel_forward()
 	right_rear_wheel_forward()
+	global car_status
+	car_status = Forward
 
 def car_backward():
 	left_front_wheel_backward()
 	right_front_wheel_backward()
 	left_rear_wheel_backward()
 	right_rear_wheel_backward()
+	global car_status
+	car_status = Backward
 
 def car_stop():
 	[gpio.output(p, False) for p in control_pins]
+	global car_status
+	car_status = Stopped
 
 def car_left_forward():
 	'''
@@ -110,6 +138,8 @@ def car_left_forward():
 	left_rear_wheel_backward()
 	right_front_wheel_forward()
 	right_rear_wheel_forward()
+	global car_status
+	car_status = LeftForward
 
 def car_right_forward():
 	'''
@@ -120,6 +150,8 @@ def car_right_forward():
 	left_rear_wheel_forward()
 	right_front_wheel_backward()
 	right_rear_wheel_backward()
+	global car_status
+	car_status = RightForward
 
 def test():
 	'''
@@ -165,6 +197,56 @@ def run_control_server():
 	 car control commands
 	 q: quit the server
 	'''
+
+	# flag to indicate we are stopping the server
+	# use a single element array so it can be used in closure
+	# of dist_func. Simple variable won't work
+	stop_server = [False]
+
+	# Start another thread to detect distance
+	# The main function of the thread
+	def dist_func():
+		print 'Distance detection thread started'
+		while not stop_server[0]:
+			# send a 10us pulse to the range sensor trigger
+			gpio.output(rs_trigger, True)
+			time.sleep(0.00001)
+			gpio.output(rs_trigger, False)
+			# Waiting for the echo to return
+			# Sleep 100us in between so I don't hog the CPU
+			# this gives me a 1.7cm resolution
+			# The max distance the sensor can detect is about
+			# 5 meters, which takes ~30ms for the echo to 
+			# get back. If we still don't get the echo after
+			# 30ms, the distance is considered infinite, and
+			# I restart the loop again.
+			wait_for_echo_count = 0 
+			while gpio.input(rs_input) == 0:
+				time.sleep(0.0001)
+				wait_for_echo_count += 1
+				if wait_for_echo_count == 300:
+					break
+			if wait_for_echo_count == 300:
+				print 'Distance: inf'
+			else:	 	
+				starttime = time.time()
+				while gpio.input(rs_input) == 1:
+					time.sleep(0.0001)
+				stoptime = time.time()
+				dist = 170 * (stoptime - starttime)
+				print 'Distance: %.2fm' % dist
+				# If distance is less than 15cm, stop the car
+				global car_status
+				if dist <= 0.15 and car_status == Forward:
+					car_stop()
+			# sleep for a while
+			time.sleep(0.05)
+		print 'Distance detection thread stopped'
+
+	# Start the thread
+	dist_detection_thread = threading.Thread(target=dist_func)
+	dist_detection_thread.start() 
+		
 	context = zmq.Context()
 	socket = context.socket(zmq.PAIR) # Use PAIR sockets
 	print 'Listening to port 5555'
@@ -179,6 +261,9 @@ def run_control_server():
 		print 'Closing the socket ...',
 		socket.close()
 		print 'done'
+		print 'Stopping distance detection thread...',
+		stop_server[0] = True
+		dist_detection_thread.join()
 		sys.exit(0)
 	
 	# Set our own sigint handler
@@ -195,6 +280,8 @@ def run_control_server():
 			socket.send('OK. Quit')
 			socket.close()
 			context.term()
+			stop_server[0] = True
+			dist_detection_thread.join()
 			break
 		else:
 			socket.send('Err: Unknown command ' + cmd)
