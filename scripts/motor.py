@@ -60,6 +60,9 @@ RightForward = 6
 # Global variable to store the current car status
 car_status = Stopped
 
+# Lock to pretect race condition during car control and update car status
+car_control_lock = threading.Lock()
+
 def setup():
 	'''
 	Setup the GPIO pins
@@ -109,49 +112,54 @@ def right_rear_wheel_backward():
 	gpio.output(right_rear_wheel_backward_pin, True)
 	 
 def car_forward():
-	left_front_wheel_forward()
-	right_front_wheel_forward()
-	left_rear_wheel_forward()
-	right_rear_wheel_forward()
-	global car_status
-	car_status = Forward
+	with car_control_lock:
+		left_front_wheel_forward()
+		right_front_wheel_forward()
+		left_rear_wheel_forward()
+		right_rear_wheel_forward()
+		global car_status
+		car_status = Forward
 
 def car_backward():
-	left_front_wheel_backward()
-	right_front_wheel_backward()
-	left_rear_wheel_backward()
-	right_rear_wheel_backward()
-	global car_status
-	car_status = Backward
+	with car_control_lock:
+		left_front_wheel_backward()
+		right_front_wheel_backward()
+		left_rear_wheel_backward()
+		right_rear_wheel_backward()
+		global car_status
+		car_status = Backward
 
 def car_stop():
-	[gpio.output(p, False) for p in control_pins]
-	global car_status
-	car_status = Stopped
+	with car_control_lock:
+		[gpio.output(p, False) for p in control_pins]
+		global car_status
+		car_status = Stopped
 
 def car_left_forward():
 	'''
 	Make the car turn left forward by turning the right
 	wheels forward and left wheels backward
 	'''
-	left_front_wheel_backward()
-	left_rear_wheel_backward()
-	right_front_wheel_forward()
-	right_rear_wheel_forward()
-	global car_status
-	car_status = LeftForward
+	with car_control_lock:
+		left_front_wheel_backward()
+		left_rear_wheel_backward()
+		right_front_wheel_forward()
+		right_rear_wheel_forward()
+		global car_status
+		car_status = LeftForward
 
 def car_right_forward():
 	'''
 	Make the car turn right forward by turning the left 
 	wheels forward and right wheels backward
 	'''
-	left_front_wheel_forward()
-	left_rear_wheel_forward()
-	right_front_wheel_backward()
-	right_rear_wheel_backward()
-	global car_status
-	car_status = RightForward
+	with car_control_lock:
+		left_front_wheel_forward()
+		left_rear_wheel_forward()
+		right_front_wheel_backward()
+		right_rear_wheel_backward()
+		global car_status
+		car_status = RightForward
 
 def test():
 	'''
@@ -237,8 +245,10 @@ def run_control_server():
 				print 'Distance: %.2fm' % dist
 				# If distance is less than 15cm, stop the car
 				global car_status
-				if dist <= 0.15 and car_status == Forward:
-					car_stop()
+				if dist <= 0.15:
+					with car_control_lock:
+						if car_status == Forward:
+							car_stop()
 			# sleep for a while
 			time.sleep(0.05)
 		print 'Distance detection thread stopped'
@@ -289,6 +299,8 @@ def run_control_server():
 
 if __name__ == '__main__':
 	setup()
-	#test()	
-	run_control_server()
+	if len(sys.argv) == 2 and sys.argv[1] == 'test':
+		test()
+	else:
+		run_control_server()
 
