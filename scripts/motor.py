@@ -61,7 +61,7 @@ RightForward = 6
 car_status = Stopped
 
 # Lock to pretect race condition during car control and update car status
-car_control_lock = threading.Lock()
+car_control_lock = threading.RLock()
 
 def setup():
 	'''
